@@ -1,0 +1,11 @@
+name: catboost_residual
+version: 1.0.0
+entrypoint: model.py::CatBoostResidualModel
+target_type: residual
+feature_set: feature_set_v1
+artifact: artifacts/model.cbm
+metadata:
+  loss: MAE
+  description: CatBoost prediction of target_delay_s minus cur_dev_s
+  clip_lower_s: -900
+  clip_upper_s: 1800

@@ -1,0 +1,75 @@
+[project]
+name = "transport-delay"
+version = "0.1.0"
+description = "Transport delay prediction platform"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11,<2",
+    "pytest>=8.3,<9",
+    "pytest-asyncio>=0.24,<1",
+    "ruff>=0.6,<1",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/contracts",
+    "packages/feature_pipeline",
+    "packages/model_core",
+    "ml",
+    "apps/gateway",
+    "apps/feature_worker",
+    "apps/ml_service",
+    "apps/backend",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/contracts/tests",
+    "packages/feature_pipeline/tests",
+    "packages/model_core/tests",
+    "ml/tests",
+    "apps/gateway/tests",
+    "apps/feature_worker/tests",
+    "apps/ml_service/tests",
+    "apps/backend/tests",
+    "tests",
+]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+    "N",
+    "SIM",
+    "RUF",
+]
+ignore = [
+    "RUF001",  # кириллица в строках (пользовательские сообщения)
+    "RUF003",  # кириллица в комментариях
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "data/",
+    "ml/models/.*/artifacts/",
+]

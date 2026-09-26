@@ -1,0 +1,171 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - transport-network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      TELEMETRY_STREAM: telemetry.v1
+      TELEMETRY_DEAD_LETTER_STREAM: telemetry.dead-letter.v1
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 19000
+      GATEWAY_DECODER: ${GATEWAY_DECODER:-json_lines}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "19000:19000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transport-network
+
+  ml-service:
+    build:
+      context: .
+      dockerfile: apps/ml_service/Dockerfile
+    environment:
+      MODEL_ROOT: /workspace/ml/models
+      ACTIVE_MODEL_CONFIG: /workspace/ml/configs/active_model.yaml
+      ML_SERVICE_HOST: 0.0.0.0
+      ML_SERVICE_PORT: 8001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ./ml/models
+        target: /workspace/ml/models
+        read_only: true
+      - type: bind
+        source: ./ml/configs
+        target: /workspace/ml/configs
+        read_only: true
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, urllib.request;
+          response = urllib.request.urlopen(
+          'http://localhost:8001/api/v1/health', timeout=3);
+          payload = json.load(response);
+          assert payload['status'] == 'ok'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - transport-network
+
+  feature-worker:
+    build:
+      context: .
+      dockerfile: apps/feature_worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      TELEMETRY_STREAM: telemetry.v1
+      PREDICTION_STREAM: predictions.v1
+      FEATURE_WORKER_GROUP: feature-worker
+      FEATURE_WORKER_CONSUMER: feature-worker-1
+      VEHICLE_STATE_PREFIX: vehicle-state
+      VEHICLE_STATE_RETENTION_S: 1200
+      SCHEDULE_PATH: /workspace/data/runtime/schedule_plan.csv
+      ML_SERVICE_URL: http://ml-service:8001/api/v1
+      SCHEDULER_PERIOD_S: 30
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ./data/runtime
+        target: /workspace/data/runtime
+        read_only: true
+    depends_on:
+      redis:
+        condition: service_healthy
+      ml-service:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transport-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PREDICTION_STREAM: predictions.v1
+      BACKEND_PREDICTION_GROUP: backend
+      BACKEND_PREDICTION_CONSUMER: backend-1
+      INCIDENT_PREFIX: incident
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen(
+          'http://localhost:8000/api/v1/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - transport-network
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - transport-network
+
+volumes:
+  redis-data:
+
+networks:
+  transport-network:
+    driver: bridge

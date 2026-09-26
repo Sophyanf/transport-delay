@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <title>Transport Delay Control</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>Transport Delay Control</h1>
+      <p>Прогноз отклонений за 10–15 минут</p>
+    </div>
+    <div id="connection-status" class="connection connection-offline">
+      Нет соединения
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="metrics">
+      <article class="metric-card">
+        <span>Всего инцидентов</span>
+        <strong id="total-count">0</strong>
+      </article>
+      <article class="metric-card metric-red">
+        <span>Высокий риск</span>
+        <strong id="red-count">0</strong>
+      </article>
+      <article class="metric-card metric-yellow">
+        <span>Средний риск</span>
+        <strong id="yellow-count">0</strong>
+      </article>
+      <article class="metric-card">
+        <span>Средняя задержка</span>
+        <strong id="average-delay">0 с</strong>
+      </article>
+    </section>
+
+    <section class="toolbar">
+      <label>
+        Уровень риска
+        <select id="risk-filter">
+          <option value="all">Все</option>
+          <option value="red">Высокий</option>
+          <option value="yellow">Средний</option>
+          <option value="green">Низкий</option>
+        </select>
+      </label>
+
+      <label>
+        Поиск ТС
+        <input
+          id="vehicle-filter"
+          type="search"
+          placeholder="Введите tr_id"
+        >
+      </label>
+
+      <button id="refresh-button" type="button">
+        Обновить
+      </button>
+    </section>
+
+    <section class="content">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Риск</th>
+              <th>ТС</th>
+              <th>Целевая остановка</th>
+              <th>Задержка</th>
+              <th>Изменение</th>
+              <th>Событие через</th>
+              <th>Причина</th>
+              <th>Рекомендация</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="incident-table"></tbody>
+        </table>
+        <div id="empty-state" class="empty-state">
+          Инциденты пока не поступили
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

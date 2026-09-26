@@ -1,0 +1,28 @@
+[project]
+name = "transport-ml-service"
+version = "0.1.0"
+description = "Transport delay inference service"
+requires-python = ">=3.12"
+dependencies = [
+    "catboost>=1.2.7,<2",
+    "fastapi>=0.115,<1",
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "pydantic-settings>=2.4,<3",
+    "uvicorn[standard]>=0.30,<1",
+    "transport-contracts",
+    "transport-features",
+    "transport-model-core",
+]
+
+[tool.uv.sources]
+transport-contracts = { workspace = true }
+transport-features = { workspace = true }
+transport-model-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["transport_ml_service"]

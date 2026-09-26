@@ -1,0 +1,24 @@
+[project]
+name = "transport-ml"
+version = "0.1.0"
+description = "Offline machine learning pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    "catboost>=1.2.7,<2",
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "pyarrow>=17,<21",
+    "transport-features",
+    "transport-model-core",
+]
+
+[tool.uv.sources]
+transport-features = { workspace = true }
+transport-model-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["transport_ml"]
