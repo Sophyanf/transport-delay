@@ -114,9 +114,7 @@ class ScheduleIndex:
                 position,
             )
             planned_time = pd.Timestamp(row["time_begin"])
-            self._targets.setdefault(key, []).append(
-                (planned_time, target)
-            )
+            self._targets.setdefault(key, []).append((planned_time, target))
 
     # Создаёт описание одной целевой остановки.
     def _build_schedule_index_target(
@@ -174,9 +172,7 @@ class ScheduleIndex:
         timestamp = self._find_timestamp(target_time)
         selected = min(
             candidates,
-            key=lambda candidate: abs(
-                (candidate[0] - timestamp).total_seconds()
-            ),
+            key=lambda candidate: abs((candidate[0] - timestamp).total_seconds()),
         )
         return selected[1]
 
@@ -298,9 +294,7 @@ class FeatureBuilder:
             utc=True,
             errors="coerce",
         )
-        timestamp = self._build_point_features_timestamp(
-            prediction_time
-        )
+        timestamp = self._build_point_features_timestamp(prediction_time)
         mask = event_time.notna() & (event_time <= timestamp)
         return history.loc[mask].copy()
 
@@ -319,13 +313,9 @@ class FeatureBuilder:
         self,
         point: Any,
     ) -> dict[str, Any]:
-        horizon = (
-            point.target_time_begin - point.T
-        ).total_seconds()
+        horizon = (point.target_time_begin - point.T).total_seconds()
         midnight = point.T.normalize()
-        seconds_from_midnight = (
-            point.T - midnight
-        ).total_seconds()
+        seconds_from_midnight = (point.T - midnight).total_seconds()
 
         return {
             "sample_id": str(point.sample_id),
@@ -337,9 +327,7 @@ class FeatureBuilder:
             "minute": int(point.T.minute),
             "day_of_week": int(point.T.dayofweek),
             "is_weekend": int(point.T.dayofweek >= 5),
-            "seconds_from_midnight": float(
-                seconds_from_midnight
-            ),
+            "seconds_from_midnight": float(seconds_from_midnight),
         }
 
     # Вычисляет признаки последнего доступного пакета.
@@ -352,24 +340,16 @@ class FeatureBuilder:
             return self._build_last_features_empty()
 
         last = history.iloc[-1]
-        age = (
-            point.T - last["event_time"]
-        ).total_seconds()
+        age = (point.T - last["event_time"]).total_seconds()
 
         return {
             "telemetry_age_s": float(age),
             "last_speed": finite_float(last.get("speed")),
             "last_heading": finite_float(last.get("heading")),
             "last_altitude": finite_float(last.get("alt")),
-            "last_location_valid": float(
-                bool(last.get("location_valid", False))
-            ),
-            "last_is_historical": float(
-                bool(last.get("is_hist_data", False))
-            ),
-            "last_receive_lag_s": self._build_last_receive_lag(
-                last
-            ),
+            "last_location_valid": float(bool(last.get("location_valid", False))),
+            "last_is_historical": float(bool(last.get("is_hist_data", False))),
+            "last_receive_lag_s": self._build_last_receive_lag(last),
             "last_lon": finite_float(last.get("lon")),
             "last_lat": finite_float(last.get("lat")),
         }
@@ -387,10 +367,7 @@ class FeatureBuilder:
             "last_lon",
             "last_lat",
         )
-        return {
-            name: float("nan")
-            for name in names
-        }
+        return {name: float("nan") for name in names}
 
     # Вычисляет задержку доставки последнего пакета.
     def _build_last_receive_lag(
@@ -420,11 +397,7 @@ class FeatureBuilder:
             history,
             (target.longitude, target.latitude),
         )
-        horizon = float(
-            (
-                point.target_time_begin - point.T
-            ).total_seconds()
-        )
+        horizon = float((point.target_time_begin - point.T).total_seconds())
         required_speed = self._build_target_required_speed(
             distance,
             horizon,
@@ -478,10 +451,7 @@ class FeatureBuilder:
             "next_stop_gap_s",
             "target_stop_sequence",
         )
-        return {
-            name: float("nan")
-            for name in names
-        }
+        return {name: float("nan") for name in names}
 
     # Вычисляет необходимую скорость до остановки.
     def _build_target_required_speed(
@@ -521,9 +491,7 @@ class FeatureBuilder:
             return float("nan")
         if not np.isfinite(required_speed):
             return float("nan")
-        return float(
-            current_speed / max(required_speed, 0.1)
-        )
+        return float(current_speed / max(required_speed, 0.1))
 
     # Оценивает отклонение расчётного ETA от плана.
     def _build_target_eta_delay(
@@ -546,7 +514,7 @@ class FeatureBuilder:
 
         return float(travel_time_s - horizon_s)
 
-     # Выбирает идентификатор, признаки модели и координаты.
+    # Выбирает идентификатор, признаки модели и координаты.
     def _build_select_result(
         self,
         frame: pd.DataFrame,
@@ -563,21 +531,18 @@ class FeatureBuilder:
             "last_lat",
         ]
         return frame.loc[:, columns].copy()
+
     # Проверяет наличие всех обязательных признаков.
     def _build_select_result_validate(
         self,
         frame: pd.DataFrame,
         feature_set: FeatureSet,
     ) -> None:
-        missing = set(
-            feature_set.feature_names
-        ).difference(frame.columns)
+        missing = set(feature_set.feature_names).difference(frame.columns)
 
         if missing:
             names = ", ".join(sorted(missing))
-            raise ValueError(
-                f"Feature builder misses columns: {names}"
-            )
+            raise ValueError(f"Feature builder misses columns: {names}")
 
 
 # Строит признаки стандартным FeatureBuilder.

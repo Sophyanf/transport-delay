@@ -1,17 +1,69 @@
-# Transport Delay
+# Хакатон Московского транспорта · Предиктор задержек
 
-Система прогнозирует задержку наземного транспорта на целевой остановке за 10–15 минут до планового прибытия.
+## О проекте
 
-Проект включает:
+**Transport Delay** — система прогнозирования задержек наземного транспорта. По потоковой
+телеметрии (GPS-координаты, скорость, курс) модель за 10–15 минут до планового прибытия
+предсказывает отклонение автобуса от графика на целевой остановке — в секундах.
 
-- offline-обучение CatBoost;
-- локальную проверку по MAE;
-- создание `submission.csv`;
-- TCP Gateway для телеметрии;
-- потоковую обработку через Redis Streams;
-- независимый ML-service;
-- Backend с WebSocket;
-- диспетчерский дашборд.
+Диспетчер видит прогнозы в реальном времени на дашборде: карта с положением ТС, список
+инцидентов (опозданий и опережений) и WebSocket-обновления без перезагрузки страницы.
+
+Проект решает задачу в двух контурах:
+
+- **offline** — обучение и оценка модели CatBoost на исторических данных, генерация
+  `submission.csv` для автоматической проверки;
+- **online** — полный real-time контур: приём живой телеметрии, потоковая обработка
+  и онлайн-инференс той же модели.
+
+## Архитектура
+
+Поток данных:
+
+```text
+TCP telemetry
+→ Gateway
+→ Redis Stream telemetry.v1
+→ Feature Worker
+→ ML-service
+→ Redis Stream predictions.v1
+→ Backend
+→ WebSocket
+→ Dashboard
+```
+
+| Компонент | Роль |
+| --- | --- |
+| Gateway | принимает телеметрию по TCP, декодирует пакеты, пишет в Redis Stream |
+| Feature Worker | собирает признаки по расписанию и телеметрии, формирует запросы к ML |
+| ML-service | рассчитывает прогноз задержки по активной модели, пишет в `predictions.v1` |
+| Backend | читает прогнозы, ведёт инциденты и состояния ТС, раздаёт API и WebSocket |
+| Dashboard | диспетчерский интерфейс: карта, списки, вкладка проверки submission |
+
+## Задача (постановка от организаторов)
+
+Прогнозная точка — пара `(tr_id, T)`: момент `T`, на который известна вся телеметрия ТС.
+Нужно предсказать **фактическую задержку** (в секундах) на первой остановке этого ТС,
+чьё плановое время прибытия попадает в окно `(T+10 мин, T+15 мин]`.
+
+- **Задержка = факт − план.** Положительная — опоздание, отрицательная — опережение.
+- Целевая остановка и её плановое время даны (`target_stop_id`, `target_time_begin`).
+- **Правило честности (анти-утечка):** при прогнозе для точки `T` используются только данные,
+  доступные на момент `T` — телеметрия с `event_time ≤ T` и подсказка `cur_dev_s`.
+
+Метрика — **MAE** (средняя абсолютная ошибка прогноза задержки, секунды):
+
+```text
+MAE      = mean(|факт − прогноз|)
+mae_zero = mean(|факт|)
+score    = max(0, min(1, (mae_zero − MAE) / (mae_zero − MAE_TARGET)))
+```
+
+Baseline `sample_submission.csv` (прогноз = `cur_dev_s`) даёт ≈ 0.40 — этот «пол» нужно
+превзойти обученной моделью. Нулевой прогноз даёт `score = 0`.
+
+По `validate/` фактических задержек нет и не будет: проверка идёт по скрытому эталону
+на стороне платформы. Загружается `submission.csv` с прогнозами.
 
 ## Требования
 
@@ -85,11 +137,7 @@ make check
 make audit
 ```
 
-Отчёт появится в:
-
-```text
-data/interim/audit_report.json
-```
+Отчёт появится в `data/interim/audit_report.json`.
 
 ### 2. Проверка baseline
 
@@ -97,10 +145,7 @@ data/interim/audit_report.json
 make baseline
 ```
 
-Будут рассчитаны:
-
-- `prediction = 0`;
-- `prediction = cur_dev_s`.
+Рассчитываются два эталона: `prediction = 0` и `prediction = cur_dev_s`.
 
 ### 3. Построение признаков
 
@@ -116,11 +161,7 @@ data/processed/train_features.parquet
 data/processed/test_features.parquet
 ```
 
-При построении признаков используется только телеметрия с:
-
-```text
-event_time <= T
-```
+При построении признаков используется только телеметрия с `event_time <= T` — утечек будущего нет.
 
 ### 4. Обучение модели
 
@@ -128,19 +169,9 @@ event_time <= T
 make train
 ```
 
-Артефакт модели:
+Артефакт модели: `ml/models/catboost_residual_v1/artifacts/model.cbm`.
 
-```text
-ml/models/catboost_residual_v1/artifacts/model.cbm
-```
-
-Модель прогнозирует остаток:
-
-```text
-target_delay_s - cur_dev_s
-```
-
-Итоговый прогноз:
+Модель прогнозирует остаток `target_delay_s - cur_dev_s`, итоговый прогноз:
 
 ```text
 prediction = cur_dev_s + predicted_residual
@@ -161,11 +192,7 @@ make features-validate
 make predict
 ```
 
-Промежуточный файл:
-
-```text
-data/interim/validate_predictions.parquet
-```
+Промежуточный файл: `data/interim/validate_predictions.parquet`.
 
 ### 7. Создание submission.csv
 
@@ -173,29 +200,20 @@ data/interim/validate_predictions.parquet
 make submission
 ```
 
-Готовый файл:
-
-```text
-data/submissions/submission.csv
-```
-
-Формат:
+Готовый файл: `data/submissions/submission.csv`. Формат — разделитель `;`, UTF-8,
+заголовок обязателен, ровно две колонки, полный покрытие всех `sample_id` без дублей:
 
 ```text
 sample_id;prediction
 131672_1767670500;120.0
 122048_1767732000;45.0
+130072_1767732000;-30.0
 ```
 
 ## Подготовка online-контура
 
-ML-service не запустится без обученного артефакта:
-
-```text
-ml/models/catboost_residual_v1/artifacts/model.cbm
-```
-
-Сначала выполните:
+ML-service не запустится без обученного артефакта
+`ml/models/catboost_residual_v1/artifacts/model.cbm`. Сначала выполните:
 
 ```bash
 make features-train
@@ -248,13 +266,7 @@ make down
 
 ## Отправка тестовой телеметрии
 
-По умолчанию Gateway использует режим:
-
-```text
-GATEWAY_DECODER=json_lines
-```
-
-Пример пакета:
+По умолчанию Gateway использует режим `GATEWAY_DECODER=json_lines`. Пример пакета:
 
 ```json
 {
@@ -302,19 +314,14 @@ with socket.create_connection(("localhost", 19000)) as connection:
 PY
 ```
 
-`tr_id` должен существовать в:
-
-```text
-data/runtime/schedule_plan.csv
-```
-
-В расписании должна быть остановка с плановым временем в окне:
-
-```text
-текущее время + 10 минут < time_begin <= текущее время + 15 минут
-```
+`tr_id` должен существовать в `data/runtime/schedule_plan.csv`. В расписании должна быть
+остановка с плановым временем в окне: текущее время + 10 минут < `time_begin` ≤ текущее время + 15 минут.
 
 ## Запуск NDTP-эмулятора
+
+CSV-файлы — это уже раскодированная телеметрия: строка `traffic.csv` соответствует
+навигационной ячейке `G6CellNav00` протокола NDTP. Для обучения модели эмулятор не нужен —
+он требуется для real-time контура: живой NDTP-поток, приём, парсинг пакетов и онлайн-инференс.
 
 Загрузка образа:
 
@@ -332,68 +339,51 @@ docker run --rm \
   ndtp-telemetry-emulator:1.0
 ```
 
-Для настоящего бинарного потока установите:
+Затем `POST /api/config` (порт 18080) настраивает устройства и период отправки;
+эмулятор по TCP шлёт NDTP-пакеты на ваш `targetHost:targetPort`.
+
+Соответствие полей `traffic.csv` ↔ `G6CellNav00`:
+
+| Колонка CSV | Поле NDTP | Преобразование |
+|---|---|---|
+| `event_time` / `gps_time` | `timestamp` | Unix-секунды → datetime |
+| `lon` | `longitude` | `longitude / 1e7`, знак из `extraDopBit6` (E/W) |
+| `lat` | `latitude` | `latitude / 1e7`, знак из `extraDopBit5` (N/S) |
+| `alt` | `altitude` | метры |
+| `speed` | `speedAvg` | км/ч |
+| `heading` | `course` | градусы |
+| `location_valid` | `extraDopBit7` | флаг достоверности координат |
+| `unit_id` | `peerAddress` (`unitId`) | ID бортового терминала |
+
+Для настоящего бинарного потока установите в окружении Gateway:
 
 ```dotenv
 GATEWAY_DECODER=ndtp
 ```
 
-Текущий `ndtp.py` является защищённой заглушкой. Его нужно реализовать по точной бинарной раскладке из официальной спецификации:
-
-```text
-docs/Emulator-and-Telematic-Packets-Specification.md
-```
-
-Без реализации framing, byte order, offsets и checksum бинарный режим не запустится. JSON Lines можно использовать для разработки и демонстрации остального контура.
+Текущий `ndtp.py` является защищённой заглушкой: реализуйте его по точной бинарной раскладке
+из `docs/Emulator-and-Telematic-Packets-Specification.md` (framing, byte order, offsets, checksum).
+Без этого бинарный режим не запустится — для разработки и демонстрации используйте JSON Lines.
 
 ## Текущее отклонение cur_dev_s
 
-В offline-данных `cur_dev_s` предоставляется организаторами.
+В offline-данных `cur_dev_s` предоставляется организаторами. В online-контуре значение
+хранится в Redis по ключу `current-deviation:<tr_id>`. Если значение ещё не рассчитано
+или не передано внешней системой, Feature Worker использует fallback `cur_dev_s = 0`.
 
-В online-контуре значение хранится в Redis:
-
-```text
-current-deviation:<tr_id>
-```
-
-Если значение ещё не рассчитано или не передано внешней системой, Feature Worker использует fallback:
-
-```text
-cur_dev_s = 0
-```
-
-Для промышленного режима требуется вычисление фактического прохождения последней остановки по GPS/map matching или интеграция с диспетчерской системой.
-
-## Поток данных
-
-```text
-TCP telemetry
-→ Gateway
-→ Redis Stream telemetry.v1
-→ Feature Worker
-→ ML-service
-→ Redis Stream predictions.v1
-→ Backend
-→ WebSocket
-→ Dashboard
-```
+Для промышленного режима требуется вычисление фактического прохождения последней остановки
+по GPS/map matching или интеграция с диспетчерской системой.
 
 ## Замена модели
 
-Активная модель задаётся в:
-
-```text
-ml/configs/active_model.yaml
-```
-
-Пример:
+Активная модель задаётся в `ml/configs/active_model.yaml`:
 
 ```yaml
 plugin: catboost_residual_v1
 version: 1.0.0
 ```
 
-После изменения конфигурации:
+После изменения конфигурации перезагрузите модель:
 
 ```bash
 curl -X POST \
@@ -402,11 +392,7 @@ curl -X POST \
   -d '{}'
 ```
 
-Подробнее:
-
-```text
-docs/model-plugin.md
-```
+Подробнее — в `docs/model-plugin.md`.
 
 ## Документация
 

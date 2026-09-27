@@ -1,7 +1,11 @@
+import logging
 from collections.abc import Iterable
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 POINT_COLUMNS = (
     "sample_id",
@@ -37,13 +41,6 @@ def validate_columns(
     if missing:
         names = ", ".join(sorted(missing))
         raise ValueError(f"{frame_name} misses columns: {names}")
-
-
-# Проверяет уникальность прогнозных точек.
-def validate_unique_samples(points: pd.DataFrame) -> None:
-    duplicates = int(points["sample_id"].duplicated().sum())
-    if duplicates:
-        raise ValueError(f"points contains {duplicates} duplicate sample_id")
 
 
 # Определяет единицу измерения Unix timestamp.
@@ -105,6 +102,13 @@ def convert_boolean_series(series: pd.Series) -> pd.Series:
     return normalized.map(mapping).fillna(False).astype(bool)
 
 
+# Проверяет уникальность прогнозных точек.
+def prepare_points_validate_unique(points: pd.DataFrame) -> None:
+    duplicates = int(points["sample_id"].duplicated().sum())
+    if duplicates:
+        raise ValueError(f"points contains {duplicates} duplicate sample_id")
+
+
 # Подготавливает прогнозные точки.
 def prepare_points(points: pd.DataFrame) -> pd.DataFrame:
     validate_columns(points, POINT_COLUMNS, "points")
@@ -118,22 +122,42 @@ def prepare_points(points: pd.DataFrame) -> pd.DataFrame:
         result["cur_dev_s"],
         errors="coerce",
     )
-    prepare_points_validate(result)
+    result = prepare_points_drop_invalid(result)
+    result = prepare_points_drop_stale_horizon(result)
+    prepare_points_validate_unique(result)
     return result.sort_values(
         ["tr_id", "T"],
         kind="stable",
     ).reset_index(drop=True)
 
 
-# Проверяет подготовленные прогнозные точки.
-def prepare_points_validate(points: pd.DataFrame) -> None:
-    validate_unique_samples(points)
+# Отбрасывает точки с невалидным временем или отклонением.
+def prepare_points_drop_invalid(points: pd.DataFrame) -> pd.DataFrame:
     required = ["T", "target_time_begin", "cur_dev_s"]
-    if points[required].isna().any().any():
-        raise ValueError("points contains invalid time or cur_dev_s values")
+    invalid_mask = points[required].isna().any(axis=1)
+    invalid_count = int(invalid_mask.sum())
+    if invalid_count:
+        logger.warning(
+            "Dropping %d points with invalid time or cur_dev_s values",
+            invalid_count,
+        )
+    return points[~invalid_mask]
+
+
+# Отбрасывает точки с неположительным горизонтом прогноза.
+def prepare_points_drop_stale_horizon(points: pd.DataFrame) -> pd.DataFrame:
     horizons = (points["target_time_begin"] - points["T"]).dt.total_seconds()
-    if (horizons <= 0).any():
-        raise ValueError("points contains non-positive prediction horizon")
+    stale_mask = horizons <= 0
+    stale_count = int(stale_mask.sum())
+    if stale_count:
+        total = len(points)
+        logger.warning(
+            "Dropping %d of %d points with non-positive prediction horizon "
+            "(stale or historical data)",
+            stale_count,
+            total,
+        )
+    return points[~stale_mask]
 
 
 # Подготавливает логические колонки телеметрии.
@@ -172,6 +196,26 @@ def prepare_traffic(traffic: pd.DataFrame) -> pd.DataFrame:
         kind="stable",
     ).reset_index(drop=True)
 
+MSK = ZoneInfo("Europe/Moscow")
+
+# Подготавливает расписание.
+def prepare_schedule(schedule: pd.DataFrame) -> pd.DataFrame:
+    validate_columns(schedule, SCHEDULE_COLUMNS, "schedule")
+    result = schedule.copy()
+    result["tr_id"] = result["tr_id"].astype(str)
+    result["tt_action_item_id"] = result["tt_action_item_id"].astype(str)
+    result["time_begin"] = parse_datetime_series(result["time_begin"])
+    # Если время в CSV наивное (без пояса) — считаем его московским
+    # и переводим в UTC. Если CSV уже с поясом, pandas локализует сам.
+    naive_mask = result["time_begin"].dt.tz is None
+    result.loc[naive_mask, "time_begin"] = (
+        result.loc[naive_mask, "time_begin"].dt.tz_localize(MSK).dt.tz_convert("UTC")
+    )
+    result = result[result["time_begin"].notna()]
+    return result.sort_values(
+        ["tr_id", "time_begin"],
+        kind="stable",
+    ).reset_index(drop=True)
 
 # Подготавливает расписание.
 def prepare_schedule(schedule: pd.DataFrame) -> pd.DataFrame:

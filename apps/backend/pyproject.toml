@@ -1,11 +1,14 @@
 [project]
 name = "transport-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Backend API for the transport dispatcher dashboard"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115,<1",
+    "pandas>=2.2,<3",
+    "pyarrow>=17,<21",
     "pydantic-settings>=2.4,<3",
+    "python-multipart>=0.0.9,<1",
     "redis[hiredis]>=5.0,<6",
     "uvicorn[standard]>=0.30,<1",
     "transport-contracts",

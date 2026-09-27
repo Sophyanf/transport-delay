@@ -1,95 +1,104 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Transport Delay Control</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="header">
     <div>
       <h1>Transport Delay Control</h1>
-      <p>Прогноз отклонений за 10–15 минут</p>
+      <p>Прогноз задержек и проблемные маршруты в реальном времени</p>
     </div>
-    <div id="connection-status" class="connection connection-offline">
-      Нет соединения
+    <div class="header-right">
+      <span id="problem-count" class="problem-badge">0</span>
+      <div id="connection-status" class="connection offline">Ожидание соединения</div>
     </div>
   </header>
 
-  <main class="main">
-    <section class="metrics">
-      <article class="metric-card">
-        <span>Всего инцидентов</span>
-        <strong id="total-count">0</strong>
-      </article>
-      <article class="metric-card metric-red">
-        <span>Высокий риск</span>
-        <strong id="red-count">0</strong>
-      </article>
-      <article class="metric-card metric-yellow">
-        <span>Средний риск</span>
-        <strong id="yellow-count">0</strong>
-      </article>
-      <article class="metric-card">
-        <span>Средняя задержка</span>
-        <strong id="average-delay">0 с</strong>
-      </article>
-    </section>
+  <nav class="tabs">
+    <button class="tab active" data-page="problem-routes-page">Проблемные маршруты</button>
+    <button class="tab" data-page="all-incidents-page">Все инциденты</button>
+    <button class="tab" data-page="map-page">Карта</button>
+    <button class="tab" data-page="what-if-page">What-if анализ</button>
+  </nav>
 
-    <section class="toolbar">
-      <label>
-        Уровень риска
+  <main>
+    <!-- Вкладка 1: Проблемные маршруты (главная) -->
+    <div id="problem-routes-page" class="page active">
+      <p class="hint">Только средний и высокий риск. Новые — сверху, старше 2 часов — уходят.</p>
+      <div class="toolbar">
+        <input type="text" id="route-filter" placeholder="Фильтр по маршруту">
+        <button id="refresh-button" type="button">Обновить</button>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr>
+            <th>Риск</th><th>ТС</th><th>Маршрут</th><th>Прогноз</th>
+            <th>Горизонт</th><th>Влияние</th><th>Связь</th><th>Причина</th><th>Рекомендация</th>
+          </tr></thead>
+          <tbody id="problem-routes-body"></tbody>
+        </table>
+      </div>
+      <div id="problem-empty-state" class="empty-state" hidden>
+        Проблемных маршрутов нет — сеть работает штатно.
+      </div>
+    </div>
+
+    <!-- Вкладка 2: Все инциденты -->
+    <div id="all-incidents-page" class="page">
+      <div class="toolbar">
+        <input type="text" id="vehicle-filter" placeholder="Фильтр по ТС">
         <select id="risk-filter">
-          <option value="all">Все</option>
+          <option value="all">Все риски</option>
           <option value="red">Высокий</option>
           <option value="yellow">Средний</option>
           <option value="green">Низкий</option>
         </select>
-      </label>
-
-      <label>
-        Поиск ТС
-        <input
-          id="vehicle-filter"
-          type="search"
-          placeholder="Введите tr_id"
-        >
-      </label>
-
-      <button id="refresh-button" type="button">
-        Обновить
-      </button>
-    </section>
-
-    <section class="content">
+      </div>
       <div class="table-wrapper">
         <table>
-          <thead>
-            <tr>
-              <th>Риск</th>
-              <th>ТС</th>
-              <th>Целевая остановка</th>
-              <th>Задержка</th>
-              <th>Изменение</th>
-              <th>Событие через</th>
-              <th>Причина</th>
-              <th>Рекомендация</th>
-              <th>Действия</th>
-            </tr>
-          </thead>
+          <thead><tr>
+            <th>Риск</th><th>ТС</th><th>Прогноз</th><th>Горизонт</th>
+            <th>Связь</th><th>Причина</th><th>Рекомендация</th>
+          </tr></thead>
           <tbody id="incident-table"></tbody>
         </table>
-        <div id="empty-state" class="empty-state">
-          Инциденты пока не поступили
-        </div>
       </div>
-    </section>
+      <div id="empty-state" class="empty-state" hidden>Нет инцидентов.</div>
+    </div>
+
+    <!-- Вкладка 3: Карта -->
+    <div id="map-page" class="page">
+      <div id="map"></div>
+    </div>
+
+    <!-- Вкладка 4: What-if -->
+    <div id="what-if-page" class="page">
+      <p class="hint">Оценка влияния выпуска дополнительного ТС на график движения.</p>
+      <form id="what-if-form" class="toolbar">
+        <input type="text" id="wi-route" placeholder="Маршрут, например 11" required>
+        <input type="datetime-local" id="wi-time">
+        <input type="number" id="wi-count" value="1" min="1" max="10">
+        <button type="submit">Рассчитать влияние</button>
+      </form>
+      <div id="what-if-result"></div>
+    </div>
   </main>
 
-  <script src="/app.js"></script>
+  <!-- Карточка инцидента -->
+  <div id="incident-modal" class="modal hidden">
+    <div class="modal-card">
+      <button id="modal-close" class="modal-close" type="button">&times;</button>
+      <h2>Инцидент</h2>
+      <div id="incident-details"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

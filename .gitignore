@@ -46,3 +46,4 @@ ndtp-telemetry-emulator.tar
 
 logs/
 *.log
+fake_emulator.*

@@ -1,13 +1,17 @@
+import json
+import logging
+import math
 from datetime import UTC, datetime
 
 import httpx
 from redis.asyncio import Redis
-
 from transport_contracts import (
     PredictionRequest,
     PredictionResponse,
     PredictionResultStreamEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class PredictionPublisher:
@@ -51,15 +55,39 @@ class PredictionPublisher:
                 headers={"Content-Type": "application/json"},
             )
 
+        if response.status_code >= 400:
+            logger.error(
+                "ML-service ответил %s: %s",
+                response.status_code,
+                response.text[:2000],
+            )
         response.raise_for_status()
         return PredictionResponse.model_validate(response.json())
 
-    # Сериализует Pydantic-контракт в стандартный JSON.
+    # Сериализует Pydantic-контракт в стандартный JSON без NaN.
     def _predict_and_publish_payload(
         self,
         request: PredictionRequest,
     ) -> str:
-        return request.model_dump_json()
+        data = request.model_dump(mode="json")
+        return json.dumps(self._replace_non_finite(data))
+
+    # Рекурсивно заменяет NaN и Infinity на None.
+    @staticmethod
+    def _replace_non_finite(value: object) -> object:
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        if isinstance(value, dict):
+            return {
+                key: PredictionPublisher._replace_non_finite(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                PredictionPublisher._replace_non_finite(item)
+                for item in value
+            ]
+        return value
 
     # Публикует результат модели в Redis Streams.
     async def _predict_and_publish_result(

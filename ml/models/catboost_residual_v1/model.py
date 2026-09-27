@@ -84,12 +84,54 @@ class CatBoostResidualModel:
         self,
         features: pd.DataFrame,
     ) -> pd.DataFrame:
-        missing = set(self.feature_names).difference(features.columns)
-        if missing:
-            names = ", ".join(sorted(missing))
-            raise ValueError(f"Model features are missing: {names}")
-        matrix = features.loc[:, self.feature_names].copy()
-        return matrix.apply(pd.to_numeric, errors="coerce")
+        categorical = self._categorical_names()
+        expected = self._expected_feature_names()
+        order = list(expected) if expected else list(self.feature_names)
+        matrix = pd.DataFrame(index=features.index)
+        for column in order:
+            if column in features.columns:
+                matrix[column] = features[column]
+            elif column in categorical:
+                matrix[column] = "nan"
+            else:
+                matrix[column] = np.nan
+        for column in matrix.columns:
+            series = matrix[column]
+            if column in categorical:
+                if series.isna().any():
+                    matrix[column] = series.map(self._as_category_value)
+                elif series.dtype.kind == "f":
+                    matrix[column] = series.round().astype("int64")
+            else:
+                matrix[column] = pd.to_numeric(series, errors="coerce")
+        return matrix
+
+    # Возвращает порядок признаков, сохранённый в модели.
+    def _expected_feature_names(self) -> list[str]:
+        names = getattr(self._model, "feature_names_", None)
+        return list(names) if names else []
+
+    # Приводит значение категориального признака к строке.
+    @staticmethod
+    def _as_category_value(value: Any) -> str:
+        if pd.isna(value):
+            return "nan"
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value)
+
+    # Определяет категориальные колонки по индексам обученной модели.
+    def _categorical_names(self) -> set[str]:
+        try:
+            indices = self._model.get_cat_feature_indices()
+        except Exception:
+            return set()
+        names = self._expected_feature_names() or list(self.feature_names)
+        return {
+            names[index]
+            for index in indices
+            if 0 <= index < len(names)
+        }
 
     # Извлекает текущую задержку как baseline.
     def _prepare_baseline(

@@ -87,11 +87,7 @@ def haversine_m(
     delta_lon = lon_2 - lon_1
     delta_lat = lat_2 - lat_1
     haversine = math.sin(delta_lat / 2) ** 2
-    haversine += (
-        math.cos(lat_1)
-        * math.cos(lat_2)
-        * math.sin(delta_lon / 2) ** 2
-    )
+    haversine += math.cos(lat_1) * math.cos(lat_2) * math.sin(delta_lon / 2) ** 2
     return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(haversine))
 
 

@@ -1,0 +1,24 @@
+[project]
+name = "transport-feature-worker"
+version = "0.1.0"
+description = "Online telemetry feature calculation worker"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27,<1",
+    "pandas>=2.2,<3",
+    "pydantic-settings>=2.4,<3",
+    "redis[hiredis]>=5.0,<6",
+    "transport-contracts",
+    "transport-features",
+]
+
+[tool.uv.sources]
+transport-contracts = { workspace = true }
+transport-features = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["transport_feature_worker"]
